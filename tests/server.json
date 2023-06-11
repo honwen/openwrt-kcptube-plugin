@@ -1,0 +1,9 @@
+{
+  "server": "0.0.0.0",
+  "server_port": 54321,
+  "password": "password",
+  "method": "plain",
+  "plugin": "./src/kcptube-plugin",
+  "plugin_opts": "mode=server;port-upper=54333;kcp=regular4;encryption_password=qwerty1234;encryption_algorithm=AES-GCM",
+  "mode": "tcp_only"
+}

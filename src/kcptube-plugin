@@ -1,0 +1,87 @@
+#!/bin/sh
+# ver: 20230611
+
+set -e
+
+has_builtin() {
+    [ "$(command -v "$1")" = "$1" ]
+}
+
+conf_path="kcptube.$$.conf"
+if [ -d /var/run/ssservice ]; then
+    conf_path="/var/run/ssservice/${conf_path}"
+elif [ -d /var/run/xrayservice ]; then
+    conf_path="/var/run/xrayservice/${conf_path}"
+elif [ -d /var/run ]; then
+    conf_path="/var/run/${conf_path}"
+else
+    conf_path="/tmp/${conf_path}"
+fi
+
+main() {
+    local type bin key0 value0 key1 value1
+    local __SS_REMOTE_PORT_UPPER=0
+
+    findBinary() {
+        bin=$(which "kcptube")
+        if has_builtin $bin; then return; fi
+
+        echo "no kcp${type} found" >&2
+        exit 1
+    }
+
+    setHosts() {
+        local mode=$(sed -n 's+mode=++p' ${conf_path})
+
+        # echo $mode
+        if [ "$mode" = "client" ]; then
+            echo "listen_on=$1" >>${conf_path}
+            echo "listen_port=$2" >>${conf_path}
+            echo "destination_port=$4" >>${conf_path}
+            echo "destination_address=$3" >>${conf_path}
+        else
+            echo "listen_on=$3" >>${conf_path}
+            echo "listen_port=$4" >>${conf_path}
+            echo "destination_address=$1" >>${conf_path}
+            echo "destination_port=$2" >>${conf_path}
+        fi
+    }
+
+    parseAndExecute() {
+
+        findBinary
+
+        __SS_REMOTE_PORT_UPPER=$(echo "$SS_PLUGIN_OPTIONS" | sed 's+.*port-upper=\([^;]*\).*+\1+g')
+        SS_PLUGIN_OPTIONS="$(echo "$SS_PLUGIN_OPTIONS" | sed 's+port-upper=[^;]*;*++g')"
+
+        if [ $SS_REMOTE_PORT -lt $__SS_REMOTE_PORT_UPPER ]; then
+            SS_REMOTE_PORT="${SS_REMOTE_PORT}-${__SS_REMOTE_PORT_UPPER}"
+        fi
+
+        echo 'ipv4_only=1' >${conf_path}
+        echo "$SS_PLUGIN_OPTIONS" | tr ';' '\n' >>${conf_path}
+        setHosts "$SS_LOCAL_HOST" "$SS_LOCAL_PORT" "$SS_REMOTE_HOST" "$SS_REMOTE_PORT"
+
+        # echo "$SS_LOCAL_HOST" "$SS_LOCAL_PORT" "$SS_REMOTE_HOST" "$SS_REMOTE_PORT"
+        echo "#" " ---- start ----" ${conf_path}
+        cat ${conf_path}
+        echo "#" " ----  end  ----" ${conf_path}
+
+        [ "V$(find /var/run -name '*-plugin')" != "V" ] && {
+            echo "$bin" | tee -a $(find /var/run -name '*-plugin')
+        }
+
+        unset SS_LOCAL_HOST SS_LOCAL_PORT SS_REMOTE_HOST SS_REMOTE_PORT SS_PLUGIN_OPTIONS
+        echo "#" $bin ${conf_path}
+        exec "$bin" ${conf_path}
+    }
+
+    parseAndExecute "$@"
+}
+
+[ "x${1-}" != x--fast-open ] || {
+    echo "skip unsupported option \"$1\"" >&2
+    shift
+}
+
+main "$@"
